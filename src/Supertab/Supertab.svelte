@@ -4,8 +4,8 @@
   export let split = "none";
   export let content = [];
   export let view = x => { return { title: "Untitled", component: x }; };
-  export let gaps = 2;
-  export let separator_size = 6;
+  export let gaps = 4;
+  export let separator_size = 8;
 
   let my_width;
   let my_height;
@@ -114,8 +114,7 @@
   }
 
   .container.nosplit > nav {
-    height: 24px;
-    font-size: 16px;
+    height: 32px;
 
     display: flex;
     justify-content: flex-start;
@@ -126,10 +125,10 @@
     background: #181818;
     border: none;
     color: #eee;
-    height: 22px;
+    height: 28px;
     border-radius: 4px;
-    padding: 0px 16px;
-    margin-right: 2px;
+    padding: 0px 24px;
+    margin-right: 4px;
 
     transition:
       height 100ms,
@@ -139,7 +138,7 @@
 
   .container.nosplit > nav > button.current {
     background: #222;
-    height: 24px;
+    height: 32px;
     border-radius: 4px 4px 0px 0px;
   }
 
@@ -147,7 +146,7 @@
     text-align: center;
     background: #222;
     border-radius: 4px;
-    top: 24px;
+    top: 32px;
     left: 0px;
     bottom: 0px;
     right: 0px;

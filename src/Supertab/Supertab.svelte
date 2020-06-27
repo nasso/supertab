@@ -1,7 +1,9 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
+  import { flip } from 'svelte/animate';
   import { spring } from 'svelte/motion';
 
+  export let reorderable = false;
   export let split = "none";
   export let content = [];
   export let view = x => { return { title: "Untitled", component: x }; };
@@ -26,6 +28,7 @@
         view: content.view ? content.view : view,
         gaps,
         separator_size,
+        reorderable,
       };
     } else {
       return {
@@ -34,6 +37,7 @@
         view,
         gaps,
         separator_size,
+        reorderable,
       };
     }
   }
@@ -48,26 +52,59 @@
   }
 
   let tabs = [];
+  let tabs_el = [];
   let cur_tab = 0;
+  let cur_tab_rect = { x: 0, y: 0, width: 0, height: 0 };
+  let tab_ghost;
+  let tab_ghost_enabled;
   let tab_move_start = { x: 0, y: 0 };
-  let tab_move = spring({ x: 0, y: 0 });
+  let tab_move_thresholds = { left: 0, right: 0, vertical: 0 };
+  let cursor_pos = { x: 0, y: 0 };
+  let tab_ghost_xform = spring({ x: 0, y: 0 });
   let moving_tab = false;
 
   $: if (split !== "vertical" && split !== "horizontal") {
+    let uid = 0;
+
     if (Array.isArray(content)) {
-      tabs = content.map(tab => view(tab));
+      tabs = content.map(tab => {
+        return {
+          id: uid++,
+          ...view(tab)
+        };
+      });
     } else {
-      tabs = [view(content)];
+      tabs = [{
+        id: uid++,
+        ...view(content)
+      }];
     }
+  }
+
+  $: if (cur_tab > 0 && moving_tab && cursor_pos.x < tab_move_thresholds.left) {
+    [tabs[cur_tab], tabs[cur_tab - 1]] = [tabs[cur_tab - 1], tabs[cur_tab]]
+    cur_tab--;
   }
 
   function tabMousedown(e, i) {
     if (e.button !== 0)
       return;
     cur_tab = i;
-    moving_tab = true;
-    tab_move_start.x = e.pageX;
-    tab_move_start.y = e.pageY;
+    moving_tab = reorderable;
+
+    if (moving_tab) {
+      let rect = tabs_el[cur_tab].getBoundingClientRect();
+
+      cur_tab_rect = {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      };
+
+      tab_move_start.x = e.clientX - cur_tab_rect.x;
+      tab_move_start.y = e.clientY - cur_tab_rect.y;
+    }
   }
 
   function winMouseup(e) {
@@ -78,7 +115,14 @@
 
     if (moving_tab) {
       moving_tab = false;
-      tab_move.set({ x: 0, y: 0 });
+      tab_ghost_enabled = false;
+      cursor_pos.x = 0;
+      cursor_pos.y = 0;
+      tab_ghost_xform.set({
+        x: 0,
+        y: 0,
+        r: 0,
+      });
     }
   }
 
@@ -95,9 +139,16 @@
     }
 
     if (moving_tab) {
-      tab_move.set({
-        x: e.pageX - tab_move_start.x,
-        y: 0,
+      tab_ghost_enabled = true;
+
+      let rect = tabs_el[cur_tab].getBoundingClientRect();
+
+      cursor_pos.x = e.clientX;
+      cursor_pos.y = e.clientY;
+      tab_ghost_xform.set({
+        x: cursor_pos.x - (rect.x + tab_move_start.x),
+        y: cursor_pos.y - (rect.y + tab_move_start.y),
+        r: 0,
       });
     }
   }
@@ -122,7 +173,6 @@
     background: #000;
     opacity: 0.0;
     transition: opacity 200ms;
-    z-index: 2;
   }
 
   .separator:hover, .separator.resizing {
@@ -156,37 +206,62 @@
     align-items: flex-start;
   }
 
-  .container.nosplit > nav > .tab {
+  .tab_ghost {
+    box-shadow: 0px 0px 4px black;
+    pointer-events: none;
+    position: fixed;
+    top: 0px;
+    left: 0px;
+    opacity: 0.0;
+
+    z-index: 1;
+
+    transition: opacity 100ms;
+  }
+
+  .tab_ghost.enable {
+    opacity: 0.8;
+  }
+
+  .container.nosplit > nav > .tab, .tab_ghost {
     background: #181818;
-    border: none;
     color: #eee;
     height: 28px;
     border-radius: 8px;
     padding: 0px 24px;
-    margin-right: 4px;
-    position: relative;
 
-    display: flex;
+    display: inline-flex;
     align-items: center;
+  }
+
+  .container.nosplit > nav > .tab {
+    position: relative;
+    margin-right: 4px;
 
     transition:
       height 100ms,
       border-radius 100ms,
       background 100ms,
-      box-shadow 100ms;
+      box-shadow 100ms,
+      opacity 100ms;
   }
 
-  .container.nosplit > nav > .tab > .label {
+  .container.nosplit > nav > .tab.dragged {
+    opacity: 0.0;
+  }
+
+  .container.nosplit > nav > .tab > .label, .tab_ghost > .label {
     font-size: 13px;
   }
 
-  .container.nosplit > nav > .tab.current {
+  .container.nosplit > nav > .tab.current, .tab_ghost {
     background: #222;
-    height: 32px;
-    border-radius: 8px 8px 0px 0px;
-    box-shadow: 0px 10px #222;
+  }
 
-    z-index: 1;
+  .container.nosplit > nav > .tab.current:not(.dragged) {
+    box-shadow: 0px 10px #222;
+    border-radius: 8px 8px 0px 0px;
+    height: 32px;
   }
 
   .container.nosplit > nav > .tab::before,
@@ -207,8 +282,8 @@
     transition: transform 100ms, opacity 100ms;
   }
 
-  .container.nosplit > nav > .tab.current::before,
-  .container.nosplit > nav > .tab.current::after {
+  .container.nosplit > nav > .tab.current:not(.dragged)::before,
+  .container.nosplit > nav > .tab.current:not(.dragged)::after {
     transform: translateY(0px) scale(1);
     opacity: 1.0;
   }
@@ -280,13 +355,12 @@
     ></div>
   {:else}
     <nav>
-      {#each tabs as tab, i}
+      {#each tabs as tab, i (tab.id) }
         <div
           class="tab"
           class:current={i === cur_tab}
-          style={ i !== cur_tab ? '' :
-            `transform: translate(${$tab_move.x}px, ${$tab_move.y}px)`
-          }
+          class:dragged={i === cur_tab && tab_ghost_enabled}
+          bind:this={tabs_el[i]}
           on:mousedown={e => tabMousedown(e, i)}
         >
           <span class="label">{tab.title}</span>
@@ -295,6 +369,18 @@
     </nav>
     <div class="pane" class:first_is_current={cur_tab === 0}>
       <svelte:component this={tabs[cur_tab].component} />
+    </div>
+    <div
+      class="tab_ghost"
+      class:enable={tab_ghost_enabled}
+      bind:this={tab_ghost}
+      style={`
+        transform:
+          translate(${cur_tab_rect.x}px, ${cur_tab_rect.y}px)
+          translate(${$tab_ghost_xform.x}px, ${$tab_ghost_xform.y}px);
+      `}
+    >
+      <span class="label">{tabs[cur_tab].title}</span>
     </div>
   {/if}
 </div>

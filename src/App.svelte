@@ -10,6 +10,7 @@
   };
 
   const config = {
+    reorderable: true,
     view: x => { return { title: x.replace(/^\w/, c => c.toUpperCase()), component: views[x] }; },
     split: "horizontal",
     content: [

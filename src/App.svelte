@@ -10,7 +10,6 @@
   };
 
   const config = {
-    reorderable: true,
     view: x => { return { title: x.replace(/^\w/, c => c.toUpperCase()), component: views[x] }; },
     split: "horizontal",
     content: [
@@ -49,6 +48,6 @@
 
 <main>
   <div class="container">
-    <Supertab {...config} />
+    <Supertab editable {...config} />
   </div>
 </main>

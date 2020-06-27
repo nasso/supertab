@@ -3,7 +3,7 @@
   import { flip } from 'svelte/animate';
   import { spring } from 'svelte/motion';
 
-  export let reorderable = false;
+  export let editable = false;
   export let split = "none";
   export let content = [];
   export let view = x => { return { title: "Untitled", component: x }; };
@@ -28,7 +28,7 @@
         view: content.view ? content.view : view,
         gaps,
         separator_size,
-        reorderable,
+        editable,
       };
     } else {
       return {
@@ -37,7 +37,7 @@
         view,
         gaps,
         separator_size,
-        reorderable,
+        editable,
       };
     }
   }
@@ -58,9 +58,9 @@
   let tab_ghost;
   let tab_ghost_enabled;
   let tab_move_start = { x: 0, y: 0 };
-  let tab_move_thresholds = { left: 0, right: 0, vertical: 0 };
   let cursor_pos = { x: 0, y: 0 };
-  let tab_ghost_xform = spring({ x: 0, y: 0 });
+  let tab_ghost_xform = spring({ x: 0, y: 0 }, { stiffness: 0.8 });
+  let tab_ghost_rot = spring(0);
   let moving_tab = false;
 
   $: if (split !== "vertical" && split !== "horizontal") {
@@ -81,16 +81,11 @@
     }
   }
 
-  $: if (cur_tab > 0 && moving_tab && cursor_pos.x < tab_move_thresholds.left) {
-    [tabs[cur_tab], tabs[cur_tab - 1]] = [tabs[cur_tab - 1], tabs[cur_tab]]
-    cur_tab--;
-  }
-
   function tabMousedown(e, i) {
     if (e.button !== 0)
       return;
     cur_tab = i;
-    moving_tab = reorderable;
+    moving_tab = editable;
 
     if (moving_tab) {
       let rect = tabs_el[cur_tab].getBoundingClientRect();
@@ -121,7 +116,6 @@
       tab_ghost_xform.set({
         x: 0,
         y: 0,
-        r: 0,
       });
     }
   }
@@ -139,7 +133,25 @@
     }
 
     if (moving_tab) {
-      tab_ghost_enabled = true;
+      if (!tab_ghost_enabled) {
+        tab_ghost_enabled = true;
+
+        window.requestAnimationFrame((() => {
+          let old_x = $tab_ghost_xform.x;
+
+          return function animate_rot() {
+            if (!tab_ghost_enabled)
+              return;
+
+            let dx = $tab_ghost_xform.x - old_x;
+            old_x = $tab_ghost_xform.x;
+
+            tab_ghost_rot.set(dx);
+
+            window.requestAnimationFrame(animate_rot);
+          };
+        })());
+      }
 
       let rect = tabs_el[cur_tab].getBoundingClientRect();
 
@@ -148,7 +160,6 @@
       tab_ghost_xform.set({
         x: cursor_pos.x - (rect.x + tab_move_start.x),
         y: cursor_pos.y - (rect.y + tab_move_start.y),
-        r: 0,
       });
     }
   }
@@ -377,7 +388,8 @@
       style={`
         transform:
           translate(${cur_tab_rect.x}px, ${cur_tab_rect.y}px)
-          translate(${$tab_ghost_xform.x}px, ${$tab_ghost_xform.y}px);
+          translate(${$tab_ghost_xform.x}px, ${$tab_ghost_xform.y}px)
+          rotateZ(${$tab_ghost_rot}deg);
       `}
     >
       <span class="label">{tabs[cur_tab].title}</span>

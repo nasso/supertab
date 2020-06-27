@@ -301,13 +301,13 @@
 
   .container.nosplit > nav > .tab::before {
     left: -10px;
-    background: url("/Supertab/inv_rad_l.svg");
+    background: url("../Supertab/inv_rad_l.svg");
     transform-origin: bottom right;
   }
 
   .container.nosplit > nav > .tab::after {
     right: -10px;
-    background: url("/Supertab/inv_rad_r.svg");
+    background: url("../Supertab/inv_rad_r.svg");
     transform-origin: bottom left;
   }
 

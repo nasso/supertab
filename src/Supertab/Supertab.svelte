@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { spring } from 'svelte/motion';
 
   export let split = "none";
@@ -49,8 +49,8 @@
 
   let tabs = [];
   let cur_tab = 0;
-  let tab_movement_target = 0;
-  let tab_movement = spring(0);
+  let tab_move_start = { x: 0, y: 0 };
+  let tab_move = spring({ x: 0, y: 0 });
   let moving_tab = false;
 
   $: if (split !== "vertical" && split !== "horizontal") {
@@ -66,7 +66,8 @@
       return;
     cur_tab = i;
     moving_tab = true;
-    $tab_movement = 0;
+    tab_move_start.x = e.pageX;
+    tab_move_start.y = e.pageY;
   }
 
   function winMouseup(e) {
@@ -77,8 +78,7 @@
 
     if (moving_tab) {
       moving_tab = false;
-      tab_movement_target = 0;
-      $tab_movement = tab_movement_target;
+      tab_move.set({ x: 0, y: 0 });
     }
   }
 
@@ -95,8 +95,10 @@
     }
 
     if (moving_tab) {
-      tab_movement_target += e.movementX;
-      $tab_movement = tab_movement_target;
+      tab_move.set({
+        x: e.pageX - tab_move_start.x,
+        y: 0,
+      });
     }
   }
 </script>
@@ -120,6 +122,7 @@
     background: #000;
     opacity: 0.0;
     transition: opacity 200ms;
+    z-index: 2;
   }
 
   .separator:hover, .separator.resizing {
@@ -136,6 +139,14 @@
     bottom: 0px;
   }
 
+  .container.vertical > .separator {
+    cursor: row-resize;
+  }
+
+  .container.horizontal > .separator {
+    cursor: col-resize;
+  }
+
   .container.nosplit > nav {
     overflow: hidden;
     height: 32px;
@@ -145,7 +156,7 @@
     align-items: flex-start;
   }
 
-  .container.nosplit > nav > button {
+  .container.nosplit > nav > .tab {
     background: #181818;
     border: none;
     color: #eee;
@@ -155,7 +166,8 @@
     margin-right: 4px;
     position: relative;
 
-    z-index: 0;
+    display: flex;
+    align-items: center;
 
     transition:
       height 100ms,
@@ -164,16 +176,21 @@
       box-shadow 100ms;
   }
 
-  .container.nosplit > nav > button.current {
+  .container.nosplit > nav > .tab > .label {
+    font-size: 13px;
+  }
+
+  .container.nosplit > nav > .tab.current {
     background: #222;
     height: 32px;
     border-radius: 8px 8px 0px 0px;
     box-shadow: 0px 10px #222;
+
     z-index: 1;
   }
 
-  .container.nosplit > nav > button::before,
-  .container.nosplit > nav > button::after {
+  .container.nosplit > nav > .tab::before,
+  .container.nosplit > nav > .tab::after {
     content: '';
 
     display: inline-block;
@@ -182,27 +199,27 @@
     border-radius: 0px 0px 0px 0px;
 
     position: absolute;
-    bottom: -4px;
-    opacity: 0.0;
-    transform: scale(0);
-
-    transition: transform 100ms, bottom 100ms, opacity 100ms;
-  }
-
-  .container.nosplit > nav > button.current::before,
-  .container.nosplit > nav > button.current::after {
     bottom: 0px;
-    opacity: 1.0;
-    transform: scale(1);
+
+    transform: translateY(4px) scale(0);
+    opacity: 0.0;
+
+    transition: transform 100ms, opacity 100ms;
   }
 
-  .container.nosplit > nav > button::before {
+  .container.nosplit > nav > .tab.current::before,
+  .container.nosplit > nav > .tab.current::after {
+    transform: translateY(0px) scale(1);
+    opacity: 1.0;
+  }
+
+  .container.nosplit > nav > .tab::before {
     left: -10px;
     background: url("/Supertab/inv_rad_l.svg");
     transform-origin: bottom right;
   }
 
-  .container.nosplit > nav > button::after {
+  .container.nosplit > nav > .tab::after {
     right: -10px;
     background: url("/Supertab/inv_rad_r.svg");
     transform-origin: bottom left;
@@ -264,12 +281,16 @@
   {:else}
     <nav>
       {#each tabs as tab, i}
-        <button
+        <div
+          class="tab"
           class:current={i === cur_tab}
-          type="button"
-          style="left: {i === cur_tab ? $tab_movement : 0}px"
+          style={ i !== cur_tab ? '' :
+            `transform: translate(${$tab_move.x}px, ${$tab_move.y}px)`
+          }
           on:mousedown={e => tabMousedown(e, i)}
-        >{tab.title}</button>
+        >
+          <span class="label">{tab.title}</span>
+        </div>
       {/each}
     </nav>
     <div class="pane" class:first_is_current={cur_tab === 0}>

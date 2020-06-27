@@ -39,10 +39,10 @@
   .container {
     display: inline-block;
     position: absolute;
-    top: 2px;
-    left: 2px;
-    right: 2px;
-    bottom: 2px;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
   }
 </style>
 

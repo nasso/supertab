@@ -114,6 +114,7 @@
   }
 
   .container.nosplit > nav {
+    overflow: hidden;
     height: 32px;
 
     display: flex;
@@ -126,26 +127,65 @@
     border: none;
     color: #eee;
     height: 28px;
-    border-radius: 4px;
+    border-radius: 8px;
     padding: 0px 24px;
     margin-right: 4px;
+    position: relative;
 
     transition:
       height 100ms,
       border-radius 100ms,
-      background 100ms;
+      background 100ms,
+      box-shadow 100ms;
   }
 
   .container.nosplit > nav > button.current {
     background: #222;
     height: 32px;
-    border-radius: 4px 4px 0px 0px;
+    border-radius: 8px 8px 0px 0px;
+    box-shadow: 0px 10px #222;
+  }
+
+  .container.nosplit > nav > button::before,
+  .container.nosplit > nav > button::after {
+    content: '';
+
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 0px 0px 0px 0px;
+
+    position: absolute;
+    bottom: -4px;
+    opacity: 0.0;
+    transform: scale(0);
+
+    transition: transform 100ms, bottom 100ms, opacity 100ms;
+  }
+
+  .container.nosplit > nav > button.current::before,
+  .container.nosplit > nav > button.current::after {
+    bottom: 0px;
+    opacity: 1.0;
+    transform: scale(1);
+  }
+
+  .container.nosplit > nav > button::before {
+    left: -10px;
+    background: url("/Supertab/inv_rad_l.svg");
+    transform-origin: bottom right;
+  }
+
+  .container.nosplit > nav > button::after {
+    right: -10px;
+    background: url("/Supertab/inv_rad_r.svg");
+    transform-origin: bottom left;
   }
 
   .container.nosplit > .pane {
     text-align: center;
     background: #222;
-    border-radius: 4px;
+    border-radius: 8px;
     top: 32px;
     left: 0px;
     bottom: 0px;
@@ -155,7 +195,7 @@
   }
 
   .container.nosplit > .pane.first_is_current {
-    border-radius: 0px 4px 4px 4px;
+    border-radius: 0px 8px 8px 8px;
   }
 </style>
 

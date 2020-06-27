@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { spring } from 'svelte/motion';
 
   export let split = "none";
   export let content = [];
@@ -46,11 +47,39 @@
     resizing = true;
   }
 
+  let tabs = [];
+  let cur_tab = 0;
+  let tab_movement_target = 0;
+  let tab_movement = spring(0);
+  let moving_tab = false;
+
+  $: if (split !== "vertical" && split !== "horizontal") {
+    if (Array.isArray(content)) {
+      tabs = content.map(tab => view(tab));
+    } else {
+      tabs = [view(content)];
+    }
+  }
+
+  function tabMousedown(e, i) {
+    if (e.button !== 0)
+      return;
+    cur_tab = i;
+    moving_tab = true;
+    $tab_movement = 0;
+  }
+
   function winMouseup(e) {
-    if (!resizing || e.button !== 0)
+    if (e.button !== 0)
       return;
     e.preventDefault();
     resizing = false;
+
+    if (moving_tab) {
+      moving_tab = false;
+      tab_movement_target = 0;
+      $tab_movement = tab_movement_target;
+    }
   }
 
   function winMousemove(e) {
@@ -64,16 +93,10 @@
           break;
       }
     }
-  }
 
-  let tabs = [];
-  let cur_tab = 0;
-
-  $: if (split !== "vertical" && split !== "horizontal") {
-    if (Array.isArray(content)) {
-      tabs = content.map(tab => view(tab));
-    } else {
-      tabs = [view(content)];
+    if (moving_tab) {
+      tab_movement_target += e.movementX;
+      $tab_movement = tab_movement_target;
     }
   }
 </script>
@@ -132,6 +155,8 @@
     margin-right: 4px;
     position: relative;
 
+    z-index: 0;
+
     transition:
       height 100ms,
       border-radius 100ms,
@@ -144,6 +169,7 @@
     height: 32px;
     border-radius: 8px 8px 0px 0px;
     box-shadow: 0px 10px #222;
+    z-index: 1;
   }
 
   .container.nosplit > nav > button::before,
@@ -239,9 +265,10 @@
     <nav>
       {#each tabs as tab, i}
         <button
-          class:current={cur_tab === i}
-          on:click={() => cur_tab = i}
+          class:current={i === cur_tab}
           type="button"
+          style="left: {i === cur_tab ? $tab_movement : 0}px"
+          on:mousedown={e => tabMousedown(e, i)}
         >{tab.title}</button>
       {/each}
     </nav>

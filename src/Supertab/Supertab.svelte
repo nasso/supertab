@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { flip } from 'svelte/animate';
   import { spring } from 'svelte/motion';
+  import { supertab_dragging } from './stores.mjs';
 
   export let editable = false;
   export let split = "none";
@@ -51,6 +52,12 @@
     resizing = true;
   }
 
+  let pane_docks = [
+    { side: "top", active: false },
+    { side: "bottom", active: false },
+    { side: "right", active: false },
+    { side: "left", active: false },
+  ];
   let tabs = [];
   let tabs_el = [];
   let cur_tab = 0;
@@ -61,7 +68,7 @@
   let cursor_pos = { x: 0, y: 0 };
   let tab_ghost_xform = spring({ x: 0, y: 0 }, { stiffness: 0.8 });
   let tab_ghost_rot = spring(0);
-  let moving_tab = false;
+  let dragging_tab = false;
 
   $: if (split !== "vertical" && split !== "horizontal") {
     let uid = 0;
@@ -85,21 +92,32 @@
     if (e.button !== 0)
       return;
     cur_tab = i;
-    moving_tab = editable;
 
-    if (moving_tab) {
-      let rect = tabs_el[cur_tab].getBoundingClientRect();
+    let rect = tabs_el[cur_tab].getBoundingClientRect();
 
-      cur_tab_rect = {
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-      };
+    cur_tab_rect = {
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+    };
 
-      tab_move_start.x = e.clientX - cur_tab_rect.x;
-      tab_move_start.y = e.clientY - cur_tab_rect.y;
-    }
+    tab_move_start.x = e.clientX - cur_tab_rect.x;
+    tab_move_start.y = e.clientY - cur_tab_rect.y;
+
+    dragging_tab = true;
+  }
+
+  function tabDragstart(e) {
+    if (e.target !== tabs_el[cur_tab])
+      return;
+
+    // transparent image to disable drag image
+    let img = new Image();
+    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=';
+    e.dataTransfer.setDragImage(img, 0, 0);
+
+    supertab_dragging.set(true);
   }
 
   function winMouseup(e) {
@@ -108,8 +126,8 @@
     e.preventDefault();
     resizing = false;
 
-    if (moving_tab) {
-      moving_tab = false;
+    if (dragging_tab) {
+      dragging_tab = false;
       tab_ghost_enabled = false;
       cursor_pos.x = 0;
       cursor_pos.y = 0;
@@ -118,6 +136,37 @@
         y: 0,
       });
     }
+  }
+
+  function handleAnyMouseMove(x, y) {
+    if (!tab_ghost_enabled) {
+      tab_ghost_enabled = true;
+
+      window.requestAnimationFrame((() => {
+        let old_x = $tab_ghost_xform.x;
+
+        return function animate_rot() {
+          if (!tab_ghost_enabled)
+            return;
+
+          let dx = $tab_ghost_xform.x - old_x;
+          old_x = $tab_ghost_xform.x;
+
+          tab_ghost_rot.set(dx);
+
+          window.requestAnimationFrame(animate_rot);
+        };
+      })());
+    }
+
+    let rect = tabs_el[cur_tab].getBoundingClientRect();
+
+    cursor_pos.x = x;
+    cursor_pos.y = y;
+    tab_ghost_xform.set({
+      x: cursor_pos.x - (rect.x + tab_move_start.x),
+      y: cursor_pos.y - (rect.y + tab_move_start.y),
+    });
   }
 
   function winMousemove(e) {
@@ -132,35 +181,51 @@
       }
     }
 
-    if (moving_tab) {
-      if (!tab_ghost_enabled) {
-        tab_ghost_enabled = true;
+    if (dragging_tab) {
+      handleAnyMouseMove(e.clientX, e.clientY);
+    }
+  }
 
-        window.requestAnimationFrame((() => {
-          let old_x = $tab_ghost_xform.x;
+  function winDragover(e) {
+    if (dragging_tab) {
+      handleAnyMouseMove(e.clientX, e.clientY);
+    }
+  }
 
-          return function animate_rot() {
-            if (!tab_ghost_enabled)
-              return;
+  function winDragend(e) {
+    if (!dragging_tab)
+      return;
 
-            let dx = $tab_ghost_xform.x - old_x;
-            old_x = $tab_ghost_xform.x;
+    dragging_tab = false;
+    supertab_dragging.set(false);
+    tab_ghost_enabled = false;
+    cursor_pos.x = 0;
+    cursor_pos.y = 0;
+    tab_ghost_xform.set({
+      x: 0,
+      y: 0,
+    });
+  }
 
-            tab_ghost_rot.set(dx);
+  function dropzoneDragover(e, i, is_dock) {
+    e.preventDefault();
+  }
 
-            window.requestAnimationFrame(animate_rot);
-          };
-        })());
-      }
+  function dropzoneDragenter(e, i, is_dock) {
+    if (is_dock) {
+      pane_docks[i].active = true;
+    }
+  }
 
-      let rect = tabs_el[cur_tab].getBoundingClientRect();
+  function dropzoneDragleave(e, i, is_dock) {
+    if (is_dock) {
+      pane_docks[i].active = false;
+    }
+  }
 
-      cursor_pos.x = e.clientX;
-      cursor_pos.y = e.clientY;
-      tab_ghost_xform.set({
-        x: cursor_pos.x - (rect.x + tab_move_start.x),
-        y: cursor_pos.y - (rect.y + tab_move_start.y),
-      });
+  function dropzoneDrop(e, i, is_dock) {
+    if (is_dock) {
+      pane_docks[i].active = false;
     }
   }
 </script>
@@ -173,6 +238,10 @@
     left: 0px;
     bottom: 0px;
     right: 0px;
+  }
+
+  .pane {
+    overflow: hidden;
   }
 
   .pane, .separator {
@@ -218,7 +287,6 @@
   }
 
   .tab_ghost {
-    box-shadow: 0px 0px 4px black;
     pointer-events: none;
     position: fixed;
     top: 0px;
@@ -227,11 +295,12 @@
 
     z-index: 1;
 
-    transition: opacity 100ms;
+    transition: opacity 100ms, box-shadow 100ms;
   }
 
   .tab_ghost.enable {
-    opacity: 0.8;
+    box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.5);
+    opacity: 1.0;
   }
 
   .container.nosplit > nav > .tab, .tab_ghost {
@@ -326,9 +395,62 @@
   .container.nosplit > .pane.first_is_current {
     border-radius: 0px 8px 8px 8px;
   }
+
+  .dropzone {
+    display: inline-block;
+    position: absolute;
+
+    background: black;
+    border-radius: 8px;
+    border: 1px dashed white;
+    opacity: 0.0;
+
+    transition: transform 200ms, opacity 200ms;
+  }
+
+  .dropzone:not(.enabled) {
+    pointer-events: none;
+  }
+
+  .dropzone.active {
+    opacity: 0.2;
+  }
+
+  .dropzone.top, .dropzone.bottom {
+    height: 30%;
+    left: 0px;
+    right: 0px;
+  }
+
+  .dropzone.left, .dropzone.right {
+    top: 0px;
+    bottom: 0px;
+    width: 30%;
+  }
+
+  .dropzone.top {
+    top: 0px;
+  }
+
+  .dropzone.right {
+    right: 0px;
+  }
+
+  .dropzone.bottom {
+    bottom: 0px;
+  }
+
+  .dropzone.left {
+    left: 0px;
+  }
 </style>
 
-<svelte:window on:mousemove={winMousemove} on:mouseup={winMouseup} />
+<svelte:window
+  on:mousemove={winMousemove}
+  on:mouseup={winMouseup}
+  on:dragover={winDragover}
+  on:dragend={winDragend}
+/>
 
 <div
   class="container"
@@ -371,8 +493,10 @@
           class="tab"
           class:current={i === cur_tab}
           class:dragged={i === cur_tab && tab_ghost_enabled}
+          draggable={editable && i === cur_tab}
           bind:this={tabs_el[i]}
           on:mousedown={e => tabMousedown(e, i)}
+          on:dragstart={tabDragstart}
         >
           <span class="label">{tab.title}</span>
         </div>
@@ -381,6 +505,17 @@
     <div class="pane" class:first_is_current={cur_tab === 0}>
       <svelte:component this={tabs[cur_tab].component} />
     </div>
+    {#each pane_docks as dock, i}
+      <div
+        on:dragover={e => dropzoneDragover(e, i, true)}
+        on:dragenter={e => dropzoneDragenter(e, i, true)}
+        on:dragleave={e => dropzoneDragleave(e, i, true)}
+        on:drop={e => dropzoneDrop(e, i, true)}
+        class="dropzone {dock.side}"
+        class:active={dock.active}
+        class:enabled={$supertab_dragging}
+      ></div>
+    {/each}
     <div
       class="tab_ghost"
       class:enable={tab_ghost_enabled}

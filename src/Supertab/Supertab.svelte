@@ -75,7 +75,6 @@
     { side: "left", active: false },
   ];
   let tabs = [];
-  let tabs_el = [];
   let cur_tab = 0;
   let cur_tab_rect = { x: 0, y: 0, width: 0, height: 0 };
   let tab_ghost;
@@ -84,7 +83,7 @@
   let tab_move_local = { x: 0, y: 0 };
   let tab_ghost_origin = { x: 0, y: 0 };
   let tab_ghost_xform = spring({ x: 0, y: 0 });
-  let dragged_tab = null;
+  let clicked_tab = null;
 
   $: if (split !== "vertical" && split !== "horizontal") {
     tabs = content.map(tab => {
@@ -92,17 +91,17 @@
         uid: tab.uid,
         content_name: tab.value,
         dragged_out: false,
+        dragged: false,
         ...view(tab.value)
       };
     });
   }
 
-  function tabMousedown(e, i) {
+  function tabMousedown(e) {
     if (e.button !== 0)
       return;
-    cur_tab = i;
 
-    let rect = tabs_el[cur_tab].getBoundingClientRect();
+    let rect = this.getBoundingClientRect();
 
     cur_tab_rect = {
       x: rect.x,
@@ -114,7 +113,7 @@
     tab_move_local.x = e.clientX - cur_tab_rect.x;
     tab_move_local.y = e.clientY - cur_tab_rect.y;
 
-    dragged_tab = cur_tab;
+    clicked_tab = cur_tab;
 
     tab_ghost_xform.stiffness = tab_ghost_xform.damping = 1.0;
     tab_ghost_origin.x = cur_tab_rect.x;
@@ -126,33 +125,31 @@
   }
 
   function tabDragstart(e) {
-    if (e.target !== tabs_el[cur_tab])
-      return;
-
     // transparent image to disable drag image
     let img = new Image();
     img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=';
     e.dataTransfer.setDragImage(img, 0, 0);
     e.dataTransfer.setData("application/x-supertab", tabs[cur_tab].content_name);
+    e.dataTransfer.dropEffect = "move";
 
     supertab_dragging.set(true);
 
     tabs[cur_tab].dragged_out = true;
-    if (cur_tab === 0 && tabs.length > 1) {
-      cur_tab++;
-    } else {
+    if (cur_tab === tabs.length - 1) {
       cur_tab--;
+    } else {
+      cur_tab++;
     }
   }
 
   function handleAnyMouseMove(x, y) {
-    if (dragged_tab === null)
+    if (clicked_tab === null)
       return;
 
     if (!tab_ghost_enabled) {
       tab_ghost_enabled = true;
-
-      tab_ghost_tab = tabs[cur_tab];
+      tab_ghost_tab = tabs[clicked_tab];
+      tabs[clicked_tab].dragged = true;
     }
 
     tab_ghost_xform.set({
@@ -177,17 +174,22 @@
   }
 
   function winDragover(e) {
+    e.dataTransfer.dropEffect = "move";
     handleAnyMouseMove(e.clientX, e.clientY);
   }
 
   function cancelTabDrag() {
-    tabs[dragged_tab].dragged_out = false;
-    cur_tab = dragged_tab;
-    dragged_tab = null;
+    if (clicked_tab === null)
+      return;
+    tabs[clicked_tab].dragged = false;
+    tabs[clicked_tab].dragged_out = false;
+    cur_tab = clicked_tab;
+    clicked_tab = null;
     tab_ghost_enabled = false;
 
     supertab_dragging.set(false);
-    tab_ghost_xform.stiffness = tab_ghost_xform.damping = 0.8;
+    tab_ghost_xform.stiffness = 0.8;
+    tab_ghost_xform.damping = 1.0;
     tab_ghost_xform.set({
       ...tab_ghost_origin
     });
@@ -199,15 +201,11 @@
     e.preventDefault();
     resizing = false;
 
-    if (dragged_tab !== null) {
-      cancelTabDrag();
-    }
+    cancelTabDrag();
   }
 
-  function winDragend() {
-    if (dragged_tab !== null) {
-      cancelTabDrag();
-    }
+  function tabDragend() {
+    cancelTabDrag();
   }
 
   function dropzoneDragover(e, i, is_dock) {
@@ -230,6 +228,8 @@
     if (is_dock) {
       pane_docks[i].active = false;
     }
+
+    e.preventDefault();
   }
 </script>
 
@@ -320,6 +320,7 @@
   .container.nosplit > nav > .tab {
     position: relative;
     margin-right: 4px;
+    white-space: nowrap;
 
     transition:
       height 100ms,
@@ -457,7 +458,6 @@
   on:mousemove={winMousemove}
   on:mouseup={winMouseup}
   on:dragover={winDragover}
-  on:dragend={winDragend}
 />
 
 <div
@@ -500,11 +500,12 @@
         <div
           class="tab"
           class:current={i === cur_tab}
-          class:dragged={i === cur_tab && tab_ghost_enabled && tab_ghost_tab && tab_ghost_tab.uid == tab.uid}
+          class:dragged={tab.dragged}
           class:dragged_out={tab.dragged_out}
-          draggable={editable}
-          bind:this={tabs_el[i]}
-          on:mousedown={e => tabMousedown(e, i)}
+          draggable={i === cur_tab && editable}
+          on:mousedown={e => { if (e.button === 0) cur_tab = i; }}
+          on:mousedown={tabMousedown}
+          on:dragend={tabDragend}
           on:dragstart={tabDragstart}
           animate:flip={{duration: 500}}
         >
@@ -513,7 +514,7 @@
       {/each}
     </nav>
     <div class="pane" class:first_is_current={tabs.length > 0 && (cur_tab === 0 || (tabs[0].dragged_out && cur_tab === 1))}>
-      {#if tabs.length === 0}
+      {#if tabs.length === 0 || (tabs.length === 1 && tabs[0].dragged_out)}
         <div></div>
       {:else}
         <svelte:component this={tabs[cur_tab].component} />

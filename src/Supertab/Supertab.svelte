@@ -84,13 +84,14 @@
   let tab_move_local = { x: 0, y: 0 };
   let tab_ghost_origin = { x: 0, y: 0 };
   let tab_ghost_xform = spring({ x: 0, y: 0 });
-  let dragging_tab = false;
+  let dragged_tab = null;
 
   $: if (split !== "vertical" && split !== "horizontal") {
     tabs = content.map(tab => {
       return {
         uid: tab.uid,
         content_name: tab.value,
+        dragged_out: false,
         ...view(tab.value)
       };
     });
@@ -113,7 +114,7 @@
     tab_move_local.x = e.clientX - cur_tab_rect.x;
     tab_move_local.y = e.clientY - cur_tab_rect.y;
 
-    dragging_tab = true;
+    dragged_tab = cur_tab;
 
     tab_ghost_xform.stiffness = tab_ghost_xform.damping = 1.0;
     tab_ghost_origin.x = cur_tab_rect.x;
@@ -136,12 +137,16 @@
 
     supertab_dragging.set(true);
 
-    // content = [...content.slice(0, cur_tab), ...content.slice(cur_tab + 1)];
-    // cur_tab = Math.max(cur_tab - 1, 0);
+    tabs[cur_tab].dragged_out = true;
+    if (cur_tab === 0 && tabs.length > 1) {
+      cur_tab++;
+    } else {
+      cur_tab--;
+    }
   }
 
   function handleAnyMouseMove(x, y) {
-    if (!dragging_tab)
+    if (dragged_tab === null)
       return;
 
     if (!tab_ghost_enabled) {
@@ -175,33 +180,33 @@
     handleAnyMouseMove(e.clientX, e.clientY);
   }
 
+  function cancelTabDrag() {
+    tabs[dragged_tab].dragged_out = false;
+    cur_tab = dragged_tab;
+    dragged_tab = null;
+    tab_ghost_enabled = false;
+
+    supertab_dragging.set(false);
+    tab_ghost_xform.stiffness = tab_ghost_xform.damping = 0.8;
+    tab_ghost_xform.set({
+      ...tab_ghost_origin
+    });
+  }
+
   function winMouseup(e) {
     if (e.button !== 0)
       return;
     e.preventDefault();
     resizing = false;
 
-    if (dragging_tab) {
-      dragging_tab = false;
-      tab_ghost_enabled = false;
-
-      tab_ghost_xform.stiffness = tab_ghost_xform.damping = 0.8;
-      tab_ghost_xform.set({
-        ...tab_ghost_origin
-      });
+    if (dragged_tab !== null) {
+      cancelTabDrag();
     }
   }
 
-  function winDragend(e) {
-    if (dragging_tab) {
-      dragging_tab = false;
-      tab_ghost_enabled = false;
-
-      supertab_dragging.set(false);
-      tab_ghost_xform.stiffness = tab_ghost_xform.damping = 0.8;
-      tab_ghost_xform.set({
-        ...tab_ghost_origin
-      });
+  function winDragend() {
+    if (dragged_tab !== null) {
+      cancelTabDrag();
     }
   }
 
@@ -326,6 +331,10 @@
 
   .container.nosplit > nav > .tab.dragged {
     opacity: 0.0;
+  }
+
+  .container.nosplit > nav > .tab.dragged_out {
+    display: none;
   }
 
   .container.nosplit > nav > .tab > .label, .tab_ghost > .label {
@@ -492,6 +501,7 @@
           class="tab"
           class:current={i === cur_tab}
           class:dragged={i === cur_tab && tab_ghost_enabled && tab_ghost_tab && tab_ghost_tab.uid == tab.uid}
+          class:dragged_out={tab.dragged_out}
           draggable={editable}
           bind:this={tabs_el[i]}
           on:mousedown={e => tabMousedown(e, i)}
@@ -502,24 +512,24 @@
         </div>
       {/each}
     </nav>
-    <div class="pane" class:first_is_current={tabs.length > 0 && cur_tab === 0}>
+    <div class="pane" class:first_is_current={tabs.length > 0 && (cur_tab === 0 || (tabs[0].dragged_out && cur_tab === 1))}>
       {#if tabs.length === 0}
         <div></div>
       {:else}
         <svelte:component this={tabs[cur_tab].component} />
       {/if}
+      {#each pane_docks as dock, i}
+        <div
+          on:dragover={e => dropzoneDragover(e, i, true)}
+          on:dragenter={e => dropzoneDragenter(e, i, true)}
+          on:dragleave={e => dropzoneDragleave(e, i, true)}
+          on:drop={e => dropzoneDrop(e, i, true)}
+          class="dropzone {dock.side}"
+          class:active={dock.active}
+          class:enabled={$supertab_dragging}
+        ></div>
+      {/each}
     </div>
-    {#each pane_docks as dock, i}
-      <div
-        on:dragover={e => dropzoneDragover(e, i, true)}
-        on:dragenter={e => dropzoneDragenter(e, i, true)}
-        on:dragleave={e => dropzoneDragleave(e, i, true)}
-        on:drop={e => dropzoneDrop(e, i, true)}
-        class="dropzone {dock.side}"
-        class:active={dock.active}
-        class:enabled={$supertab_dragging}
-      ></div>
-    {/each}
     <div
       class="tab_ghost"
       class:enable={tab_ghost_enabled}

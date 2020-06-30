@@ -1,9 +1,10 @@
 <script>
-  import { onMount, onDestroy, tick } from 'svelte';
+  import { onMount, onDestroy, tick, createEventDispatcher } from 'svelte';
   import { flip } from 'svelte/animate';
   import { spring } from 'svelte/motion';
   import { supertab_dragging, makeContentsFromLayout } from './common.mjs';
 
+  const dispatch = createEventDispatcher();
   export let editable = false;
   export let gaps = 4;
   export let separator_size = 8;
@@ -44,7 +45,7 @@
     { side: "right", active: false },
     { side: "left", active: false },
   ];
-  let tabs = [];
+  let tabs;
   let cur_tab = 0;
   let cur_tab_rect = { x: 0, y: 0, width: 0, height: 0 };
   let tab_ghost;
@@ -59,10 +60,16 @@
     cur_tab = tabs.length - 1;
   }
 
+  $: if (tabs && tabs.length === 0) {
+    dispatch("emptied");
+  }
+
   function endTabDrag() {
-    cur_tab = clicked_tab;
-    tabs[clicked_tab].dragged = false;
-    tabs[clicked_tab].dragged_out = false;
+    if (tabs[clicked_tab]) {
+      cur_tab = clicked_tab;
+      tabs[clicked_tab].dragged = false;
+      tabs[clicked_tab].dragged_out = false;
+    }
     clicked_tab = null;
     tab_ghost_enabled = false;
     supertab_dragging.set(false);
@@ -243,6 +250,10 @@
         root_height = rect.height;
       });
     }
+  }
+
+  function paneEmptied(i) {
+    alert(`pane ${i} is empty!`);
   }
 
   function setContents(contents) {
@@ -502,10 +513,10 @@
   {#if split}
     {#if split.orientation === "vertical"}
       <div class="pane" style="top: 0px; bottom: {root_height - split_loc_px + half_gaps}px">
-        <svelte:self {...pane_props(0)} />
+        <svelte:self {...pane_props(0)} on:emptied={() => paneEmptied(0)} />
       </div>
       <div class="pane" style="top: {split_loc_px + half_gaps}px; bottom: 0px">
-        <svelte:self {...pane_props(1)} />
+        <svelte:self {...pane_props(1)}  on:emptied={() => paneEmptied(1)}/>
       </div>
       <div
         on:mousedown={sepMousedown}
@@ -515,10 +526,10 @@
       ></div>
     {:else if split.orientation === "horizontal"}
       <div class="pane" style="left: 0px; right: {root_width - split_loc_px + half_gaps}px">
-        <svelte:self {...pane_props(0)} />
+        <svelte:self {...pane_props(0)}  on:emptied={() => paneEmptied(0)}/>
       </div>
       <div class="pane" style="left: {split_loc_px + half_gaps}px; right: 0px">
-        <svelte:self {...pane_props(1)} />
+        <svelte:self {...pane_props(1)}  on:emptied={() => paneEmptied(1)}/>
       </div>
       <div
         on:mousedown={sepMousedown}
@@ -560,7 +571,7 @@
           on:drop={e => dropzoneDrop(e, i, true)}
           class="dropzone {dock.side}"
           class:active={dock.active}
-          class:enabled={$supertab_dragging}
+          class:enabled={$supertab_dragging && (clicked_tab === null || tabs.length > 1)}
         ></div>
       {/each}
     </div>

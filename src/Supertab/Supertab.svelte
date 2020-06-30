@@ -1,62 +1,36 @@
 <script>
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { flip } from 'svelte/animate';
   import { spring } from 'svelte/motion';
-  import { supertab_dragging } from './stores.mjs';
+  import { supertab_dragging, makeContentsFromLayout } from './common.mjs';
 
   export let editable = false;
-  export let split = "none";
-  export let content = [];
-  export let view = x => { return { title: "Untitled", component: x }; };
   export let gaps = 4;
   export let separator_size = 8;
+  export let makeView = x => { return { title: "Untitled", component: x }; };
+  export let layout = null;
+  export let contents;
 
-  // initialize content
-  {
-    if (!Array.isArray(content))
-      content = [content];
-
-    let uid = 0;
-    content = content.map(value => {
-      return {
-        uid: uid++,
-        value,
-      };
-    });
+  $: if (layout !== null) {
+    contents = makeContentsFromLayout(layout);
   }
 
-  let my_width;
-  let my_height;
-  let split_loc = 200;
+  let root_el;
+  let root_width = 0;
+  let root_height = 0;
   $: half_gaps = gaps / 2;
   $: half_seps = separator_size / 2;
 
-  onMount(() => {
-    split_loc = (split === "vertical" ? my_height : my_width) / 2;
-  });
+  $: split_loc_px = contents.split ? contents.split.position * (contents.split.orientation === "horizontal" ? root_width : root_height) : 0;
 
-  function to_props(content) {
-    let value = content.value;
-
-    if (typeof value === "object" && value.split) {
-      return {
-        split: value.split,
-        content: value.content,
-        view: value.view ? value.view : view,
-        gaps,
-        separator_size,
-        editable,
-      };
-    } else {
-      return {
-        split: "none",
-        content: value,
-        view,
-        gaps,
-        separator_size,
-        editable,
-      };
-    }
+  function pane_props(i) {
+    return {
+      editable,
+      gaps,
+      separator_size,
+      makeView,
+      contents: contents.panes[i],
+    };
   }
 
   let resizing = false;
@@ -85,15 +59,39 @@
   let tab_ghost_xform = spring({ x: 0, y: 0 });
   let clicked_tab = null;
 
-  $: if (split !== "vertical" && split !== "horizontal") {
-    tabs = content.map(tab => {
+  $: tabs = !contents.tabs ? [] :
+    contents.tabs.map(tab => {
       return {
         uid: tab.uid,
-        content_name: tab.value,
+        view_name: tab.view,
         dragged_out: false,
         dragged: false,
-        ...view(tab.value)
+        ...makeView(tab.view)
       };
+    });
+
+  $: if (cur_tab > tabs.length - 1) {
+    cur_tab = tabs.length - 1;
+  }
+
+  function endTabDrag() {
+    cur_tab = clicked_tab;
+    tabs[clicked_tab].dragged = false;
+    tabs[clicked_tab].dragged_out = false;
+    clicked_tab = null;
+    console.log("ENDED");
+    tab_ghost_enabled = false;
+    supertab_dragging.set(false);
+  }
+
+  function cancelTabDrag() {
+    if (clicked_tab === null)
+      return;
+    endTabDrag();
+    tab_ghost_xform.stiffness = 0.8;
+    tab_ghost_xform.damping = 1.0;
+    tab_ghost_xform.set({
+      ...tab_ghost_origin
     });
   }
 
@@ -114,6 +112,7 @@
     tab_move_local.y = e.clientY - cur_tab_rect.y;
 
     clicked_tab = cur_tab;
+    console.log("CLICKED");
 
     tab_ghost_xform.stiffness = tab_ghost_xform.damping = 1.0;
     tab_ghost_origin.x = cur_tab_rect.x;
@@ -129,7 +128,7 @@
     let img = new Image();
     img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=';
     e.dataTransfer.setDragImage(img, 0, 0);
-    e.dataTransfer.setData("application/x-supertab", tabs[cur_tab].content_name);
+    e.dataTransfer.setData("application/x-supertab", tabs[cur_tab].view_name);
     e.dataTransfer.dropEffect = "move";
 
     supertab_dragging.set(true);
@@ -160,12 +159,12 @@
 
   function winMousemove(e) {
     if (resizing) {
-      switch (split) {
+      switch (contents.split.orientation) {
         case "vertical":
-          split_loc += e.movementY;
+          contents.split.position += e.movementY / root_height;
           break;
         case "horizontal":
-          split_loc += e.movementX;
+          contents.split.position += e.movementX / root_width;
           break;
       }
     }
@@ -174,25 +173,7 @@
   }
 
   function winDragover(e) {
-    e.dataTransfer.dropEffect = "move";
     handleAnyMouseMove(e.clientX, e.clientY);
-  }
-
-  function cancelTabDrag() {
-    if (clicked_tab === null)
-      return;
-    tabs[clicked_tab].dragged = false;
-    tabs[clicked_tab].dragged_out = false;
-    cur_tab = clicked_tab;
-    clicked_tab = null;
-    tab_ghost_enabled = false;
-
-    supertab_dragging.set(false);
-    tab_ghost_xform.stiffness = 0.8;
-    tab_ghost_xform.damping = 1.0;
-    tab_ghost_xform.set({
-      ...tab_ghost_origin
-    });
   }
 
   function winMouseup(e) {
@@ -204,12 +185,20 @@
     cancelTabDrag();
   }
 
-  function tabDragend() {
-    cancelTabDrag();
+  function tabDragend(e) {
+    if (e.dataTransfer.dropEffect === "move") {
+      // dragged somewhere! now it's gone
+      contents.tabs = [...contents.tabs.slice(0, clicked_tab), ...contents.tabs.slice(clicked_tab + 1)];
+      endTabDrag();
+    } else {
+      // drag was cancelled
+      cancelTabDrag();
+    }
   }
 
   function dropzoneDragover(e, i, is_dock) {
     e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
   }
 
   function dropzoneDragenter(e, i, is_dock) {
@@ -225,11 +214,52 @@
   }
 
   function dropzoneDrop(e, i, is_dock) {
+    e.preventDefault();
+
     if (is_dock) {
       pane_docks[i].active = false;
-    }
 
-    e.preventDefault();
+      const view_name = e.dataTransfer.getData("application/x-supertab");
+      let side = pane_docks[i].side;
+      let new_layout = {
+        split: {
+          orientation: "horizontal",
+          position: 0.5,
+        },
+
+        panes: [],
+      };
+
+      let my_tabs = contents.tabs.map(tab => tab.view);
+
+      // if we are moving in self, filter out the moved tab
+      if (clicked_tab !== null) {
+        my_tabs.splice(clicked_tab, 1);
+        endTabDrag();
+      }
+
+      if (side === "top" || side === "left") {
+        new_layout.panes = [view_name, my_tabs];
+      } else if (side === "bottom" || side === "right") {
+        new_layout.panes = [my_tabs, view_name];
+      }
+
+      if (side === "left" || side === "right") {
+        new_layout.split.orientation = "horizontal";
+      } else if (side === "top" || side === "bottom") {
+        new_layout.split.orientation = "vertical";
+      }
+
+      contents = makeContentsFromLayout(new_layout);
+
+      // this is needed because for some reason svelte doesn't do it???
+      tick().then(() => {
+        let rect = root_el.getBoundingClientRect();
+
+        root_width = rect.width;
+        root_height = rect.height;
+      });
+    }
   }
 </script>
 
@@ -462,38 +492,41 @@
 
 <div
   class="container"
-  class:vertical={split === "vertical"}
-  class:horizontal={split === "horizontal"}
-  class:nosplit={split !== "vertical" && split !== "horizontal"}
-  bind:clientWidth={my_width}
-  bind:clientHeight={my_height}
+  class:vertical={contents.split && contents.split.orientation === "vertical"}
+  class:horizontal={contents.split && contents.split.orientation === "horizontal"}
+  class:nosplit={!contents.split}
+  bind:this={root_el}
+  bind:clientWidth={root_width}
+  bind:clientHeight={root_height}
 >
-  {#if split === "vertical"}
-    <div class="pane" style="top: 0px; bottom: {my_height - split_loc + half_gaps}px">
-      <svelte:self {...to_props(content[0])} />
-    </div>
-    <div class="pane" style="top: {split_loc + half_gaps}px; bottom: 0px">
-      <svelte:self {...to_props(content[1])} />
-    </div>
-    <div
-      on:mousedown={sepMousedown}
-      class="separator"
-      class:resizing
-      style="top: {split_loc - half_seps}px; bottom: {my_height - split_loc - half_seps}px;"
-    ></div>
-  {:else if split === "horizontal"}
-    <div class="pane" style="left: 0px; right: {my_width - split_loc + half_gaps}px">
-      <svelte:self {...to_props(content[0])} />
-    </div>
-    <div class="pane" style="left: {split_loc + half_gaps}px; right: 0px">
-      <svelte:self {...to_props(content[1])} />
-    </div>
-    <div
-      on:mousedown={sepMousedown}
-      class="separator"
-      class:resizing
-      style="left: {split_loc - half_seps}px; right: {my_width - split_loc - half_seps}px;"
-    ></div>
+  {#if contents.split}
+    {#if contents.split.orientation === "vertical"}
+      <div class="pane" style="top: 0px; bottom: {root_height - split_loc_px + half_gaps}px">
+        <svelte:self {...pane_props(0)} />
+      </div>
+      <div class="pane" style="top: {split_loc_px + half_gaps}px; bottom: 0px">
+        <svelte:self {...pane_props(1)} />
+      </div>
+      <div
+        on:mousedown={sepMousedown}
+        class="separator"
+        class:resizing
+        style="top: {split_loc_px - half_seps}px; bottom: {root_height - split_loc_px - half_seps}px;"
+      ></div>
+    {:else if contents.split.orientation === "horizontal"}
+      <div class="pane" style="left: 0px; right: {root_width - split_loc_px + half_gaps}px">
+        <svelte:self {...pane_props(0)} />
+      </div>
+      <div class="pane" style="left: {split_loc_px + half_gaps}px; right: 0px">
+        <svelte:self {...pane_props(1)} />
+      </div>
+      <div
+        on:mousedown={sepMousedown}
+        class="separator"
+        class:resizing
+        style="left: {split_loc_px - half_seps}px; right: {root_width - split_loc_px - half_seps}px;"
+      ></div>
+    {/if}
   {:else}
     <nav>
       {#each tabs as tab, i (tab.uid) }
@@ -514,7 +547,7 @@
       {/each}
     </nav>
     <div class="pane" class:first_is_current={tabs.length > 0 && (cur_tab === 0 || (tabs[0].dragged_out && cur_tab === 1))}>
-      {#if tabs.length === 0 || (tabs.length === 1 && tabs[0].dragged_out)}
+      {#if !tabs[cur_tab] || (tabs.length === 1 && tabs[0].dragged_out)}
         <div></div>
       {:else}
         <svelte:component this={tabs[cur_tab].component} />

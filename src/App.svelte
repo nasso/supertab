@@ -9,16 +9,28 @@
     console: ConsoleView,
   };
 
-  const config = {
-    view: x => { return { title: x.replace(/^\w/, c => c.toUpperCase()), component: views[x] }; },
-    split: "horizontal",
-    content: [
-      ["effects", "preview", "console", "timeline"],
+  function makeView(name) {
+    return {
+      title: name.replace(/^\w/, c => c.toUpperCase()),
+      component: views[name],
+    };
+  }
+
+  const layout = {
+    split: {
+      orientation: "horizontal",
+      position: 0.2,
+    },
+    panes: [
+      "effects",
       {
-        split: "vertical",
-        content: [
-          "preview",
-          ["timeline", "console"]
+        split: {
+          orientation: "vertical",
+          position: 0.7,
+        },
+        panes: [
+          ["preview", "preview", "console"],
+          ["timeline", "console"],
         ]
       }
     ]
@@ -48,6 +60,6 @@
 
 <main>
   <div class="container">
-    <Supertab editable {...config} />
+    <Supertab editable makeView={makeView} layout={layout} />
   </div>
 </main>

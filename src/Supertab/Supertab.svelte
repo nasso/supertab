@@ -9,11 +9,6 @@
   export let separator_size = 8;
   export let makeView = x => { return { title: "Untitled", component: x }; };
   export let layout = null;
-  export let contents;
-
-  $: if (layout !== null) {
-    contents = makeContentsFromLayout(layout);
-  }
 
   let root_el;
   let root_width = 0;
@@ -21,7 +16,8 @@
   $: half_gaps = gaps / 2;
   $: half_seps = separator_size / 2;
 
-  $: split_loc_px = contents.split ? contents.split.position * (contents.split.orientation === "horizontal" ? root_width : root_height) : 0;
+  let split;
+  $: split_loc_px = split ? split.position * (split.orientation === "horizontal" ? root_width : root_height) : 0;
 
   function pane_props(i) {
     return {
@@ -29,7 +25,7 @@
       gaps,
       separator_size,
       makeView,
-      contents: contents.panes[i],
+      layout: layout.panes[i],
     };
   }
 
@@ -59,18 +55,7 @@
   let tab_ghost_xform = spring({ x: 0, y: 0 });
   let clicked_tab = null;
 
-  $: tabs = !contents.tabs ? [] :
-    contents.tabs.map(tab => {
-      return {
-        uid: tab.uid,
-        view_name: tab.view,
-        dragged_out: false,
-        dragged: false,
-        ...makeView(tab.view)
-      };
-    });
-
-  $: if (cur_tab > tabs.length - 1) {
+  $: if (cur_tab > 0 && cur_tab > tabs.length - 1) {
     cur_tab = tabs.length - 1;
   }
 
@@ -79,7 +64,6 @@
     tabs[clicked_tab].dragged = false;
     tabs[clicked_tab].dragged_out = false;
     clicked_tab = null;
-    console.log("ENDED");
     tab_ghost_enabled = false;
     supertab_dragging.set(false);
   }
@@ -112,7 +96,6 @@
     tab_move_local.y = e.clientY - cur_tab_rect.y;
 
     clicked_tab = cur_tab;
-    console.log("CLICKED");
 
     tab_ghost_xform.stiffness = tab_ghost_xform.damping = 1.0;
     tab_ghost_origin.x = cur_tab_rect.x;
@@ -159,12 +142,12 @@
 
   function winMousemove(e) {
     if (resizing) {
-      switch (contents.split.orientation) {
+      switch (split.orientation) {
         case "vertical":
-          contents.split.position += e.movementY / root_height;
+          split.position += e.movementY / root_height;
           break;
         case "horizontal":
-          contents.split.position += e.movementX / root_width;
+          split.position += e.movementX / root_width;
           break;
       }
     }
@@ -188,7 +171,7 @@
   function tabDragend(e) {
     if (e.dataTransfer.dropEffect === "move") {
       // dragged somewhere! now it's gone
-      contents.tabs = [...contents.tabs.slice(0, clicked_tab), ...contents.tabs.slice(clicked_tab + 1)];
+      tabs = [...tabs.slice(0, clicked_tab), ...tabs.slice(clicked_tab + 1)];
       endTabDrag();
     } else {
       // drag was cancelled
@@ -230,7 +213,7 @@
         panes: [],
       };
 
-      let my_tabs = contents.tabs.map(tab => tab.view);
+      let my_tabs = tabs.map(tab => tab.view_name);
 
       // if we are moving in self, filter out the moved tab
       if (clicked_tab !== null) {
@@ -250,7 +233,7 @@
         new_layout.split.orientation = "vertical";
       }
 
-      contents = makeContentsFromLayout(new_layout);
+      layout = new_layout;
 
       // this is needed because for some reason svelte doesn't do it???
       tick().then(() => {
@@ -261,6 +244,23 @@
       });
     }
   }
+
+  function setContents(contents) {
+    tabs = !contents.tabs ? [] :
+      contents.tabs.map(tab => {
+        return {
+          uid: tab.uid,
+          view_name: tab.view,
+          dragged_out: false,
+          dragged: false,
+          ...makeView(tab.view)
+        };
+      });
+
+    split = contents.split;
+  }
+
+  $: setContents(makeContentsFromLayout(layout));
 </script>
 
 <style>
@@ -492,15 +492,15 @@
 
 <div
   class="container"
-  class:vertical={contents.split && contents.split.orientation === "vertical"}
-  class:horizontal={contents.split && contents.split.orientation === "horizontal"}
-  class:nosplit={!contents.split}
+  class:vertical={split && split.orientation === "vertical"}
+  class:horizontal={split && split.orientation === "horizontal"}
+  class:nosplit={!split}
   bind:this={root_el}
   bind:clientWidth={root_width}
   bind:clientHeight={root_height}
 >
-  {#if contents.split}
-    {#if contents.split.orientation === "vertical"}
+  {#if split}
+    {#if split.orientation === "vertical"}
       <div class="pane" style="top: 0px; bottom: {root_height - split_loc_px + half_gaps}px">
         <svelte:self {...pane_props(0)} />
       </div>
@@ -513,7 +513,7 @@
         class:resizing
         style="top: {split_loc_px - half_seps}px; bottom: {root_height - split_loc_px - half_seps}px;"
       ></div>
-    {:else if contents.split.orientation === "horizontal"}
+    {:else if split.orientation === "horizontal"}
       <div class="pane" style="left: 0px; right: {root_width - split_loc_px + half_gaps}px">
         <svelte:self {...pane_props(0)} />
       </div>

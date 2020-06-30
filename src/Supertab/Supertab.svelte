@@ -215,64 +215,98 @@
     }
   }
 
-  function dropzoneDragover(e, i, is_dock) {
+  function dropzoneDragover(e, i, type) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
   }
 
-  function dropzoneDragenter(e, i, is_dock) {
-    if (is_dock) {
-      pane_docks[i].active = true;
+  function dropzoneDragenter(e, i, type) {
+    switch (type) {
+      case "before_tab":
+        tabs[i].dock.before = true;
+        break;
+      case "after_tab":
+        tabs[i].dock.after = true;
+        break;
+      case "dock":
+        pane_docks[i].active = true;
+        break;
     }
   }
 
-  function dropzoneDragleave(e, i, is_dock) {
-    if (is_dock) {
-      pane_docks[i].active = false;
+  function dropzoneDragleave(e, i, type) {
+    switch (type) {
+      case "before_tab":
+        tabs[i].dock.before = false;
+        break;
+      case "after_tab":
+        tabs[i].dock.after = false;
+        break;
+      case "dock":
+        pane_docks[i].active = false;
+        break;
     }
   }
 
-  function dropzoneDrop(e, i, is_dock) {
+  function dropzoneDrop(e, i, type) {
     e.preventDefault();
 
-    if (is_dock) {
-      pane_docks[i].active = false;
+    const view_name = e.dataTransfer.getData("application/x-supertab");
+    let new_layout;
 
-      const view_name = e.dataTransfer.getData("application/x-supertab");
-      let side = pane_docks[i].side;
-      let new_layout = {
-        split: {
-          orientation: "horizontal",
-          position: 0.5,
-        },
+    switch (type) {
+      case "before_tab":
+        tabs[i].dock.before = false;
 
-        panes: [],
-      };
+        new_layout = Array.isArray(layout) ? layout : [layout];
+        new_layout.splice(i, 0, view_name);
+        layout = new_layout;
+        break;
+      case "after_tab":
+        tabs[i].dock.after = false;
 
-      let my_tabs = tabs.map(tab => tab.view_name);
+        new_layout = Array.isArray(layout) ? layout : [layout];
+        new_layout.splice(i + 1, 0, view_name);
+        layout = new_layout;
+        break;
+      case "dock":
+        pane_docks[i].active = false;
 
-      // if we are moving in self, filter out the moved tab
-      if (clicked_tab !== null) {
-        my_tabs.splice(clicked_tab, 1);
-        endTabDrag();
-      }
+        let side = pane_docks[i].side;
+        new_layout = {
+          split: {
+            orientation: "horizontal",
+            position: 0.5,
+          },
 
-      if (side === "top" || side === "left") {
-        new_layout.panes = [view_name, my_tabs];
-      } else if (side === "bottom" || side === "right") {
-        new_layout.panes = [my_tabs, view_name];
-      }
+          panes: [],
+        };
 
-      if (side === "left" || side === "right") {
-        new_layout.split.orientation = "horizontal";
-      } else if (side === "top" || side === "bottom") {
-        new_layout.split.orientation = "vertical";
-      }
+        let my_tabs = tabs.map(tab => tab.view_name);
 
-      layout = new_layout;
+        // if we are moving in self, filter out the moved tab
+        if (clicked_tab !== null) {
+          my_tabs.splice(clicked_tab, 1);
+          endTabDrag();
+        }
 
-      // this is needed because for some reason svelte doesn't do it???
-      forceRootRectRefresh();
+        if (side === "top" || side === "left") {
+          new_layout.panes = [view_name, my_tabs];
+        } else if (side === "bottom" || side === "right") {
+          new_layout.panes = [my_tabs, view_name];
+        }
+
+        if (side === "left" || side === "right") {
+          new_layout.split.orientation = "horizontal";
+        } else if (side === "top" || side === "bottom") {
+          new_layout.split.orientation = "vertical";
+        }
+
+        layout = new_layout;
+
+        // this is needed because for some reason svelte doesn't do it???
+        forceRootRectRefresh();
+        break;
     }
   }
 
@@ -289,6 +323,10 @@
           view_name: tab.view,
           dragged_out: false,
           dragged: false,
+          dock: {
+            before: false,
+            after: false,
+          },
           ...makeView(tab.view)
         };
       });
@@ -368,7 +406,7 @@
     left: 0px;
     opacity: 0.0;
 
-    z-index: 1;
+    z-index: 2;
 
     transition: opacity 100ms, box-shadow 100ms;
   }
@@ -476,7 +514,7 @@
     border-radius: 0px 8px 8px 8px;
   }
 
-  .dropzone {
+  .pane > .dropzone {
     display: inline-block;
     position: absolute;
 
@@ -489,40 +527,104 @@
     transition: transform 200ms, opacity 200ms;
   }
 
-  .dropzone.enabled {
+  .pane > .dropzone.enabled {
     pointer-events: initial;
   }
 
-  .dropzone.active {
+  .pane > .dropzone.active {
     opacity: 0.2;
   }
 
-  .dropzone.top, .dropzone.bottom {
+  .pane > .dropzone.top, .pane > .dropzone.bottom {
     height: 30%;
     left: 0px;
     right: 0px;
   }
 
-  .dropzone.left, .dropzone.right {
+  .pane > .dropzone.left, .pane > .dropzone.right {
     top: 0px;
     bottom: 0px;
     width: 30%;
   }
 
-  .dropzone.top {
+  .pane > .dropzone.top {
     top: 0px;
   }
 
-  .dropzone.right {
+  .pane > .dropzone.right {
     right: 0px;
   }
 
-  .dropzone.bottom {
+  .pane > .dropzone.bottom {
     bottom: 0px;
   }
 
-  .dropzone.left {
+  .pane > .dropzone.left {
     left: 0px;
+  }
+
+  .container.nosplit > nav > .tab > .dropzone {
+    width: 50%;
+    height: 28px;
+    z-index: 1;
+
+    display: inline-block;
+    position: absolute;
+    top: 0px;
+
+    pointer-events: none;
+  }
+
+  .container.nosplit > nav > .tab > .dropzone.enabled {
+    pointer-events: initial;
+  }
+
+  .container.nosplit > nav > .tab > .dropzone::before {
+    content: '';
+
+    display: inline-block;
+    position: absolute;
+    top: 0px;
+    right: 0px;
+    bottom: 0px;
+    left: 0px;
+
+    background: black;
+    border-radius: 8px;
+    border: 1px dashed white;
+    opacity: 0.0;
+
+    pointer-events: none;
+
+    transition: opacity 200ms;
+  }
+
+  .container.nosplit > nav > .tab:not(.first) > .dropzone.before {
+    display: none;
+  }
+
+  .container.nosplit > nav > .tab > .dropzone.enabled::before {
+    opacity: 0.1;
+  }
+
+  .container.nosplit > nav > .tab > .dropzone.active::before {
+    opacity: 0.2;
+  }
+
+  .container.nosplit > nav > .tab > .dropzone.before {
+    left: 0%;
+  }
+
+  .container.nosplit > nav > .tab > .dropzone.after {
+    right: calc(-25% - 2px);
+  }
+
+  .container.nosplit > nav > .tab.last > .dropzone.before {
+    width: 100%;
+  }
+
+  .container.nosplit > nav > .tab.last > .dropzone.after {
+    right: calc(-50% - 4px);
   }
 
   .debug {
@@ -597,6 +699,8 @@
       {#each tabs as tab, i (tab.uid) }
         <div
           class="tab"
+          class:first={i === 0 || (i === 1 && tabs[0].dragged_out)}
+          class:last={i === tabs.length - 1 || (i === tabs.length - 2 && tabs[tabs.length - 1].dragged_out)}
           class:current={i === cur_tab}
           class:dragged={tab.dragged}
           class:dragged_out={tab.dragged_out}
@@ -608,6 +712,24 @@
           animate:flip={{duration: 500}}
         >
           <span class="label">{tab.title}</span>
+          <div
+            on:dragover={e => dropzoneDragover(e, i, "before_tab")}
+            on:dragenter={e => dropzoneDragenter(e, i, "before_tab")}
+            on:dragleave={e => dropzoneDragleave(e, i, "before_tab")}
+            on:drop={e => dropzoneDrop(e, i, "before_tab")}
+            class="dropzone before"
+            class:active={tab.dock.before}
+            class:enabled={$supertab_dragging}
+          ></div>
+          <div
+            on:dragover={e => dropzoneDragover(e, i, "after_tab")}
+            on:dragenter={e => dropzoneDragenter(e, i, "after_tab")}
+            on:dragleave={e => dropzoneDragleave(e, i, "after_tab")}
+            on:drop={e => dropzoneDrop(e, i, "after_tab")}
+            class="dropzone after"
+            class:active={tab.dock.after}
+            class:enabled={$supertab_dragging}
+          ></div>
         </div>
       {/each}
     </nav>
@@ -619,10 +741,10 @@
       {/if}
       {#each pane_docks as dock, i}
         <div
-          on:dragover={e => dropzoneDragover(e, i, true)}
-          on:dragenter={e => dropzoneDragenter(e, i, true)}
-          on:dragleave={e => dropzoneDragleave(e, i, true)}
-          on:drop={e => dropzoneDrop(e, i, true)}
+          on:dragover={e => dropzoneDragover(e, i, "dock")}
+          on:dragenter={e => dropzoneDragenter(e, i, "dock")}
+          on:dragleave={e => dropzoneDragleave(e, i, "dock")}
+          on:drop={e => dropzoneDrop(e, i, "dock")}
           class="dropzone {dock.side}"
           class:active={dock.active}
           class:enabled={$supertab_dragging && (clicked_tab === null || tabs.length > 1)}

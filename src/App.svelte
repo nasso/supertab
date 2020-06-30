@@ -16,7 +16,7 @@
     };
   }
 
-  const layout = {
+  let layout = {
     split: {
       orientation: "horizontal",
       position: 0.2,
@@ -35,6 +35,12 @@
       }
     ]
   };
+
+  function handleKeydown(e) {
+    if (e.key === "w") {
+      console.log(JSON.stringify(layout, null, 4));
+    }
+  }
 </script>
 
 <style>
@@ -58,8 +64,10 @@
   }
 </style>
 
+<svelte:window on:keydown={handleKeydown} />
+
 <main>
   <div class="container">
-    <Supertab editable makeView={makeView} layout={layout} />
+    <Supertab editable makeView={makeView} bind:layout={layout} />
   </div>
 </main>

@@ -5,11 +5,18 @@
   import { supertab_dragging, makeContentsFromLayout } from './common.mjs';
 
   const dispatch = createEventDispatcher();
+  export let debug = false;
   export let editable = false;
   export let gaps = 4;
   export let separator_size = 8;
   export let makeView = x => { return { title: "Untitled", component: x }; };
   export let layout = null;
+
+  let debug_output = "";
+
+  function dbg(msg) {
+    debug_output += `${msg}\n`;
+  }
 
   let root_el;
   let root_width = 0;
@@ -17,16 +24,35 @@
   $: half_gaps = gaps / 2;
   $: half_seps = separator_size / 2;
 
-  let split;
-  $: split_loc_px = split ? split.position * (split.orientation === "horizontal" ? root_width : root_height) : 0;
+  let split = null;
+  let split_loc_px = 0;
+  $: if (split) {
+    split_loc_px = split.position * (split.orientation === "horizontal" ? root_width : root_height);
+  }
 
-  function pane_props(i) {
+  function forceRootRectRefresh() {
+    tick().then(() => {
+      if (!root_el)
+        return;
+
+      let rect = root_el.getBoundingClientRect();
+
+      root_width = rect.width;
+      root_height = rect.height;
+
+      if (split) {
+        split_loc_px = split.position * (split.orientation === "horizontal" ? root_width : root_height);
+      }
+    });
+  }
+
+  function pane_props() {
     return {
       editable,
       gaps,
       separator_size,
       makeView,
-      layout: layout.panes[i],
+      debug,
     };
   }
 
@@ -37,6 +63,7 @@
       return;
     e.preventDefault();
     resizing = true;
+    dbg(`resizing dims: ${root_width}x${root_height}`);
   }
 
   let pane_docks = [
@@ -56,11 +83,9 @@
   let tab_ghost_xform = spring({ x: 0, y: 0 });
   let clicked_tab = null;
 
-  $: if (cur_tab > 0 && cur_tab > tabs.length - 1) {
-    cur_tab = tabs.length - 1;
-  }
+  $: cur_tab = Math.min(Math.max(cur_tab, 0), Array.isArray(layout) ? layout.length - 1 : 0);
 
-  $: if (tabs && tabs.length === 0) {
+  $: if (Array.isArray(layout) && layout.length === 0) {
     dispatch("emptied");
   }
 
@@ -176,9 +201,13 @@
   }
 
   function tabDragend(e) {
+    dbg(`drag ended with ${e.dataTransfer.dropEffect}`);
     if (e.dataTransfer.dropEffect === "move") {
       // dragged somewhere! now it's gone
-      tabs = [...tabs.slice(0, clicked_tab), ...tabs.slice(clicked_tab + 1)];
+      if (Array.isArray(layout))
+        layout = [...layout.slice(0, clicked_tab), ...layout.slice(clicked_tab + 1)];
+      else
+        layout = [];
       endTabDrag();
     } else {
       // drag was cancelled
@@ -243,17 +272,13 @@
       layout = new_layout;
 
       // this is needed because for some reason svelte doesn't do it???
-      tick().then(() => {
-        let rect = root_el.getBoundingClientRect();
-
-        root_width = rect.width;
-        root_height = rect.height;
-      });
+      forceRootRectRefresh();
     }
   }
 
   function paneEmptied(i) {
-    alert(`pane ${i} is empty!`);
+    dbg(`pane ${i} was emptied!`);
+    layout = layout.panes[1 - i];
   }
 
   function setContents(contents) {
@@ -268,7 +293,13 @@
         };
       });
 
+    if (contents.tabs) {
+      dbg(`new tabs: [${tabs.map(t => t.view_name).join()}]`);
+    }
+
     split = contents.split;
+
+    forceRootRectRefresh();
   }
 
   $: setContents(makeContentsFromLayout(layout));
@@ -493,6 +524,29 @@
   .dropzone.left {
     left: 0px;
   }
+
+  .debug {
+    position: absolute;
+    left: 0px;
+
+    display: inline-block;
+    margin: 0px;
+    color: white;
+
+    max-height: 100px;
+    overflow: scroll;
+    scrollbar-width: none;
+  }
+
+  .container.nosplit > .debug {
+    top: 32px;
+    background: rgba(255, 0, 0, 0.2);
+  }
+
+  .container:not(.nosplit) > .debug {
+    bottom: 0px;
+    background: rgba(0, 255, 0, 0.2);
+  }
 </style>
 
 <svelte:window
@@ -513,10 +567,10 @@
   {#if split}
     {#if split.orientation === "vertical"}
       <div class="pane" style="top: 0px; bottom: {root_height - split_loc_px + half_gaps}px">
-        <svelte:self {...pane_props(0)} on:emptied={() => paneEmptied(0)} />
+        <svelte:self {...pane_props(0)} on:emptied={() => paneEmptied(0)} bind:layout={layout.panes[0]} />
       </div>
       <div class="pane" style="top: {split_loc_px + half_gaps}px; bottom: 0px">
-        <svelte:self {...pane_props(1)}  on:emptied={() => paneEmptied(1)}/>
+        <svelte:self {...pane_props(1)}  on:emptied={() => paneEmptied(1)} bind:layout={layout.panes[1]} />
       </div>
       <div
         on:mousedown={sepMousedown}
@@ -526,10 +580,10 @@
       ></div>
     {:else if split.orientation === "horizontal"}
       <div class="pane" style="left: 0px; right: {root_width - split_loc_px + half_gaps}px">
-        <svelte:self {...pane_props(0)}  on:emptied={() => paneEmptied(0)}/>
+        <svelte:self {...pane_props(0)}  on:emptied={() => paneEmptied(0)} bind:layout={layout.panes[0]} />
       </div>
       <div class="pane" style="left: {split_loc_px + half_gaps}px; right: 0px">
-        <svelte:self {...pane_props(1)}  on:emptied={() => paneEmptied(1)}/>
+        <svelte:self {...pane_props(1)}  on:emptied={() => paneEmptied(1)} bind:layout={layout.panes[1]} />
       </div>
       <div
         on:mousedown={sepMousedown}
@@ -583,5 +637,8 @@
     >
       <span class="label">{tab_ghost_tab ? tab_ghost_tab.title : ""}</span>
     </div>
+  {/if}
+  {#if debug}
+    <pre class="debug">{split ? "(split) " : ""}{debug_output}</pre>
   {/if}
 </div>
